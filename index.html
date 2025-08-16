@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Криптосигналы — Umka</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="style.css" />
+  <meta name="theme-color" content="#0b1220" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>📈 Umka — Crypto Signals</h1>
+    <button id="btn-settings" class="btn">⚙️ Настройки</button>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Пары</h2>
+      <div class="row">
+        <input id="pair-input" placeholder="Напр.: BTCUSDT" />
+        <button id="btn-add-pair" class="btn">Добавить</button>
+      </div>
+      <ul id="pairs-list"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Сигналы (реальное время)</h2>
+      <ul id="signals-list" class="signals"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Статус источников</h2>
+      <ul id="sources-status"></ul>
+    </section>
+  </main>
+
+  <dialog id="dlg-settings">
+    <h3>Настройки API и фильтров</h3>
+    <p>Ключи хранятся локально в телефоне (localStorage).</p>
+
+    <details>
+      <summary>Биржа (Binance)</summary>
+      <label>API Key <input id="binance-key" /></label>
+      <label>Secret <input id="binance-secret" /></label>
+      <label><input type="checkbox" id="enable-ws" checked /> Включить WebSocket</label>
+    </details>
+
+    <details>
+      <summary>On-Chain / Метрики</summary>
+      <label>Glassnode API <input id="glassnode-key" /></label>
+      <label>Nansen API <input id="nansen-key" /></label>
+    </details>
+
+    <details>
+      <summary>ETF/Опционы</summary>
+      <label>Gamma-data API <input id="gamma-key" /></label>
+      <label>ETF Flows API <input id="etf-key" /></label>
+    </details>
+
+    <details open>
+      <summary>Вес фильтров чек-листа</summary>
+      <div id="weights-panel"></div>
+    </details>
+
+    <menu>
+      <button id="btn-clear" class="btn ghost">Сбросить</button>
+      <button id="btn-save" class="btn">Сохранить</button>
+      <button id="btn-close" class="btn">Закрыть</button>
+    </menu>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
