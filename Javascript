@@ -1,0 +1,110 @@
+// dataSources.js
+// Источники данных (Binance) + вебсокеты, REST и утилиты.
+
+const BINANCE_SPOT_REST = "https://api.binance.com";
+const BINANCE_FUTURES_REST = "https://fapi.binance.com";
+const BINANCE_WS_BASE = "wss://stream.binance.com:9443/ws";
+
+const DataBus = {
+  sockets: new Map(),  // symbol -> { ws, onTick, alive }
+  statusListeners: [], // fn({source, status, message})
+  setStatus(source, status, message="") {
+    this.statusListeners.forEach(fn => fn({source, status, message}));
+  },
+  onStatus(fn) { this.statusListeners.push(fn); }
+};
+
+// Приводим ввод к формату Binance: "btc", "BTC/USDT" -> "BTCUSDT"
+export function normalizeSymbol(input) {
+  if (!input) return null;
+  let s = input.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (s.endsWith("USDT")) return s;
+  if (s.endsWith("USD")) return s.replace(/USD$/, "USDT"); // упрощение
+  if (!s.endsWith("USDT")) s += "USDT";
+  return s;
+}
+
+// ---- REST ----
+
+// 24h сводка (изменение, объём, максимум/минимум)
+export async function fetch24h(symbol) {
+  const url = `${BINANCE_SPOT_REST}/api/v3/ticker/24hr?symbol=${symbol}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`24h ${symbol}: ${r.status}`);
+  return r.json();
+}
+
+// Фандинг и премия (фьючерсы USDT-M)
+export async function fetchFuturesInfo(symbol) {
+  const [premiumR, fundingR] = await Promise.all([
+    fetch(`${BINANCE_FUTURES_REST}/fapi/v1/premiumIndex?symbol=${symbol}`),
+    fetch(`${BINANCE_FUTURES_REST}/fapi/v1/fundingRate?symbol=${symbol}&limit=1`)
+  ]);
+  if (!premiumR.ok) throw new Error("premiumIndex fail");
+  if (!fundingR.ok) throw new Error("fundingRate fail");
+  const premium = await premiumR.json();         // { markPrice, lastFundingRate, ... }
+  const fundingArr = await fundingR.json();      // [{ fundingRate }]
+  return {
+    markPrice: parseFloat(premium.markPrice),
+    lastFundingRate: fundingArr?.[0]?.fundingRate ? parseFloat(fundingArr[0].fundingRate) : null
+  };
+}
+
+// ---- WebSocket ----
+
+// Подписка на поток цены в реальном времени
+export function subscribeTicker(symbol, onTick) {
+  const key = symbol;
+  unsubscribeTicker(symbol); // перестраховка
+
+  const stream = `${symbol.toLowerCase()}@miniTicker`;
+  const ws = new WebSocket(`${BINANCE_WS_BASE}/${stream}`);
+
+  const entry = { ws, onTick, alive: false };
+  DataBus.sockets.set(key, entry);
+  DataBus.setStatus("WebSocket", "connecting", `Подключаюсь к ${symbol}…`);
+
+  ws.onopen = () => {
+    entry.alive = true;
+    DataBus.setStatus("WebSocket", "ok", `WS открыт: ${symbol}`);
+  };
+
+  ws.onmessage = (ev) => {
+    try {
+      // miniTicker: { c: "lastPrice", P: "priceChangePercent", ... }
+      const msg = JSON.parse(ev.data);
+      const price = parseFloat(msg.c);
+      const changePct = parseFloat(msg.P);
+      onTick({ symbol, price, changePct, ts: Date.now() });
+    } catch (e) {
+      console.error("WS parse", e);
+    }
+  };
+
+  ws.onerror = () => {
+    DataBus.setStatus("WebSocket", "error", `Ошибка WS: ${symbol}`);
+  };
+
+  ws.onclose = () => {
+    DataBus.setStatus("WebSocket", "closed", `WS закрыт: ${symbol}. Реконнект через 3с`);
+    setTimeout(() => {
+      // автопереподключение
+      if (DataBus.sockets.get(key) === entry) {
+        subscribeTicker(symbol, onTick);
+      }
+    }, 3000);
+  };
+}
+
+export function unsubscribeTicker(symbol) {
+  const entry = DataBus.sockets.get(symbol);
+  if (entry?.ws?.readyState === WebSocket.OPEN || entry?.ws?.readyState === WebSocket.CONNECTING) {
+    try { entry.ws.close(); } catch {}
+  }
+  DataBus.sockets.delete(symbol);
+}
+
+// Позволяет UI подписаться на статусы источников
+export function onSourceStatus(fn) {
+  DataBus.onStatus(fn);
+}
